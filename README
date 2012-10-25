@@ -1,0 +1,17 @@
+Xiangqi-lisp
+By Sean Yeh
+
+A simple CLI xiangqi (Chinese chess) game for player vs. player.
+
+I originally intended to write this as a fun way to review lisp the day
+before an AI quiz at school; I wrote the bulk of this that day, and later went
+back to make it prettier and more user-friendly (relatively!).
+
+An important note: Because this was written primarily for myself, I went with
+the move notation system that seemed most intuitive for me rather than the
+standard one(s).
+    old-position new-position (e.g. h2e2 for the common cannon opening)
+I may or may not look into the standard notation(s) in the future.
+(see http://en.wikipedia.org/wiki/Xiangqi#Notation)
+
+Xiangqi-lisp is written under the MIT license (see LICENSE for details)
