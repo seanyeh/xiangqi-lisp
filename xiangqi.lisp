@@ -5,6 +5,20 @@
 ;;; This file is licensed under the MIT license; 
 ;;; see the LICENSE file for details
 
+
+; Player struct
+(defstruct player
+  pieces
+  name)
+
+(defstruct piece
+  name
+  pos
+  side ;"RED" or "BLACK"
+  move-spaces
+  (move-limits #'no-move-limits)
+  eat-spaces)
+
 ; My own concatenate function
 (defun s+ (&rest args)
   (reduce (lambda (x y)
@@ -14,6 +28,176 @@
                             (T y))))
               (concatenate 'string x result)))
           (append '("") args)))
+
+
+(defconstant STARTBOARD '(
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
+                          ))
+
+(defun setup-board(red black)
+  (let ((board STARTBOARD))
+    (mapcar
+      (lambda (piece)
+        (set-space board (piece-pos piece) piece))
+      (append (player-pieces red) (player-pieces black))
+      )
+    board))
+
+(defun setup-pieces(piece-type side row col-list)
+  (mapcar (lambda(col)
+            (new-piece piece-type side (s+ col row)))
+          col-list)
+  )
+
+; MOVE SPACES FUNCTIONS
+(defun is-empty-space(board x)
+  (equal (get-piece board x) "_"))
+
+(defun new-piece(piece-type side pos)
+  (let ((piece (copy-piece piece-type)))
+    (setf (piece-pos piece) pos)
+    (setf (piece-side piece) side)
+    piece
+    ))
+
+(defun general-move-spaces(board pos side)
+  (list (move-n pos) (move-e pos) (move-s pos) (move-w pos)))
+
+(defun rook-move-spaces(board pos side)
+  (append (get-greedy-spaces board (move-n pos) #'move-n)
+          (get-greedy-spaces board (move-e pos) #'move-e)
+          (get-greedy-spaces board (move-s pos) #'move-s)
+          (get-greedy-spaces board (move-w pos) #'move-w)))
+
+(defun cannon-eat-spaces(board pos)
+  (let ((npos (car (last (get-greedy-spaces board (move-n pos) #'move-n))))
+        (epos (car (last (get-greedy-spaces board (move-e pos) #'move-e))))
+        (spos (car (last (get-greedy-spaces board (move-s pos) #'move-s))))
+        (wpos (car (last (get-greedy-spaces board (move-w pos) #'move-w)))))
+    (append (get-greedy-spaces board (move-n npos) #'move-n)
+            (get-greedy-spaces board (move-e epos) #'move-e)
+            (get-greedy-spaces board (move-s spos) #'move-s)
+            (get-greedy-spaces board (move-w wpos) #'move-w))))
+
+(defun horse-move-spaces(board pos side)
+  (mapcan
+    (lambda(x)
+      (let* (
+             (temppos (funcall (car x) pos))
+             (newpos1 (funcall (cadr x) temppos))
+             (newpos2 (funcall (caddr x) temppos)))
+        (and temppos (is-empty-space board temppos) 
+             (mapcan (lambda(y) (and y (list y))) (list newpos1 newpos2)))
+        ))
+    '((move-n move-ne move-nw)
+      (move-e move-ne move-se)
+      (move-s move-se move-sw)
+      (move-w move-nw move-sw))
+    )
+  )
+
+(defun advisor-move-spaces(board pos side)
+  (list (move-ne pos) (move-nw pos) (move-se pos) (move-sw pos)))
+
+(defun elephant-move-spaces(board pos side)
+  (mapcan
+    (lambda(x)
+      (let ((temppos (funcall x pos)))
+        (and temppos (is-empty-space board temppos) (funcall x temppos) (list (funcall x temppos)))
+        ))
+    '(move-ne move-nw move-se move-sw))
+  )
+
+(defun soldier-move-spaces(board pos side)
+  (cond
+    ((null side) nil)
+    ; if passed river
+    ((and (equal side "RED") (char>= (elt pos 1) #\5))
+     (list (move-n pos) (move-e pos) (move-w pos)))
+    ((and (equal side "BLACK") (char<= (elt pos 1) #\4))
+     (list (move-s pos) (move-e pos) (move-w pos)))
+    ;not passed river
+    ((equal side "RED") (list (move-n pos)))
+    ((equal side "BLACK") (list (move-s pos)))
+    ; if somehow side is not right nil
+    (T nil)))
+
+(defun no-move-limits(board pos) pos)
+
+(defun palace-limits(board pos)
+  (and pos (char>= (elt pos 0) #\d) (char<= (elt pos 0) #\f) 
+       (or (char>= (elt pos 1) #\7) (char<= (elt pos 1) #\2))))
+
+; easy way: row cannot be 3 or 6
+(defun elephant-move-limits(board pos)
+  (and pos 
+       (not (or (equal (elt pos 1) #\3) 
+                (equal (elt pos 1) #\6)))))
+
+; To get spaces in a certain direction for pieces that move >=1 spaces
+(defun get-greedy-spaces(board pos pos-change)
+  (cond 
+    ((null pos) nil)
+    ((not (is-empty-space board pos)) (list pos))
+    (T (append (list pos) 
+               (get-greedy-spaces board (funcall pos-change pos) pos-change)))
+    ))
+
+
+(defun move-n(pos) (move-x pos 0 1))
+(defun move-e(pos) (move-x pos 1 0))
+(defun move-s(pos) (move-x pos 0 -1))
+(defun move-w(pos) (move-x pos -1 0))
+(defun move-ne(pos) (move-x pos 1 1))
+(defun move-nw(pos) (move-x pos -1 1))
+(defun move-se(pos) (move-x pos 1 -1))
+(defun move-sw(pos) (move-x pos -1 -1))
+
+(defun move-x(pos addx addy)
+  (if (null pos)
+    nil ; return nil early if original pos is nil
+    (let ( (x (ascii-inc (elt pos 0) addx)) (y (ascii-inc (elt pos 1) addy)) )
+      (cond
+        ((equal y #\:) nil)
+        ((equal y #\/) nil)
+        ((equal x #\`) nil)
+        ((equal x #\j) nil)
+        (T (s+ x y))
+        ))
+    ))
+
+; Increment
+(defun ascii-inc(x addx) (code-char (+ addx (char-code x))))
+
+(defconstant ADVISOR (make-piece :name "A" :move-spaces #'advisor-move-spaces
+                                 :move-limits #'palace-limits))
+(defconstant CANNON (make-piece :name "C" :move-spaces #'rook-move-spaces))
+(defconstant ROOK (make-piece :name "R" :move-spaces #'rook-move-spaces))
+(defconstant ELEPHANT (make-piece :name "E" :move-spaces #'elephant-move-spaces
+                                  :move-limits #'elephant-move-limits))
+(defconstant GENERAL (make-piece :name "G" :move-spaces #'general-move-spaces 
+                                 :move-limits #'palace-limits))
+(defconstant HORSE (make-piece :name "H" :move-spaces #'horse-move-spaces))
+(defconstant SOLDIER (make-piece :name "S" :move-spaces #'soldier-move-spaces 
+                                 :pos "c3"))
+
+
+(defconstant SOLDIER_COLS '("a" "c" "e" "g" "i"))
+(defconstant CANNON_COLS '("b" "h"))
+(defconstant ROOK_COLS '("a" "i"))
+(defconstant HORSE_COLS '("b" "h"))
+(defconstant ELEPHANT_COLS '("c" "g"))
+(defconstant ADVISOR_COLS '("d" "f"))
+(defconstant GENERAL_COLS '("e"))
 
 ;; PLAYER
 (defconstant REDPLAYERSTART
@@ -35,10 +219,6 @@
                        (setup-pieces ADVISOR side "9" ADVISOR_COLS)
                        (setup-pieces GENERAL side "9" GENERAL_COLS))))
 
-; Player struct
-(defstruct player
-  pieces
-  name)
 
 (defun get-alive-pieces(board player)
   (let ((pieces (player-pieces player)))
@@ -78,14 +258,6 @@
 
 
 ;; PIECES
-
-(defstruct piece
-  name
-  pos
-  side ;"RED" or "BLACK"
-  move-spaces
-  (move-limits #'no-move-limits)
-  eat-spaces)
 
 ; Returns ((piece1 oldpos1 newpos1) (piece2 oldpos2 newpos2)...)
 (defun piece-get-all-moves(board piece)
@@ -173,136 +345,6 @@
       possible-eat-spaces)
     ))
 
-; MOVE SPACES FUNCTIONS
-(defun general-move-spaces(board pos side)
-  (list (move-n pos) (move-e pos) (move-s pos) (move-w pos)))
-
-(defun rook-move-spaces(board pos side)
-  (append (get-greedy-spaces board (move-n pos) #'move-n)
-          (get-greedy-spaces board (move-e pos) #'move-e)
-          (get-greedy-spaces board (move-s pos) #'move-s)
-          (get-greedy-spaces board (move-w pos) #'move-w)))
-
-(defun cannon-eat-spaces(board pos)
-  (let ((npos (car (last (get-greedy-spaces board (move-n pos) #'move-n))))
-        (epos (car (last (get-greedy-spaces board (move-e pos) #'move-e))))
-        (spos (car (last (get-greedy-spaces board (move-s pos) #'move-s))))
-        (wpos (car (last (get-greedy-spaces board (move-w pos) #'move-w)))))
-    (append (get-greedy-spaces board (move-n npos) #'move-n)
-            (get-greedy-spaces board (move-e epos) #'move-e)
-            (get-greedy-spaces board (move-s spos) #'move-s)
-            (get-greedy-spaces board (move-w wpos) #'move-w))))
-
-(defun horse-move-spaces(board pos side)
-  (mapcan
-    (lambda(x)
-      (let* (
-             (temppos (funcall (car x) pos))
-             (newpos1 (funcall (cadr x) temppos))
-             (newpos2 (funcall (caddr x) temppos)))
-        (and temppos (is-empty-space board temppos) 
-             (mapcan (lambda(y) (and y (list y))) (list newpos1 newpos2)))
-        ))
-    '((move-n move-ne move-nw)
-      (move-e move-ne move-se)
-      (move-s move-se move-sw)
-      (move-w move-nw move-sw))
-    )
-  )
-
-(defun advisor-move-spaces(board pos side)
-  (list (move-ne pos) (move-nw pos) (move-se pos) (move-sw pos)))
-
-(defun elephant-move-spaces(board pos side)
-  (mapcan
-    (lambda(x)
-      (let ((temppos (funcall x pos)))
-        (and temppos (is-empty-space board temppos) (funcall x temppos) (list (funcall x temppos)))
-        ))
-    '(move-ne move-nw move-se move-sw))
-  )
-
-(defun soldier-move-spaces(board pos side)
-  (cond
-    ((null side) nil)
-    ; if passed river
-    ((and (equal side "RED") (char>= (elt pos 1) #\5))
-     (list (move-n pos) (move-e pos) (move-w pos)))
-    ((and (equal side "BLACK") (char<= (elt pos 1) #\4))
-     (list (move-s pos) (move-e pos) (move-w pos)))
-    ;not passed river
-    ((equal side "RED") (list (move-n pos)))
-    ((equal side "BLACK") (list (move-s pos)))
-    ; if somehow side is not right nil
-    (T nil)))
-
-(defun no-move-limits(board pos) pos)
-
-(defun palace-limits(board pos)
-  (and pos (char>= (elt pos 0) #\d) (char<= (elt pos 0) #\f) 
-       (or (char>= (elt pos 1) #\7) (char<= (elt pos 1) #\2))))
-
-; easy way: row cannot be 3 or 6
-(defun elephant-move-limits(board pos)
-  (and pos 
-       (not (or (equal (elt pos 1) #\3) 
-                (equal (elt pos 1) #\6)))))
-
-; To get spaces in a certain direction for pieces that move >=1 spaces
-(defun get-greedy-spaces(board pos pos-change)
-  (cond 
-    ((null pos) nil)
-    ((not (is-empty-space board pos)) (list pos))
-    (T (append (list pos) 
-               (get-greedy-spaces board (funcall pos-change pos) pos-change)))
-    ))
-
-(defun is-empty-space(board x)
-  (equal (get-piece board x) "_"))
-
-(defconstant ADVISOR (make-piece :name "A" :move-spaces #'advisor-move-spaces
-                                 :move-limits #'palace-limits))
-(defconstant CANNON (make-piece :name "C" :move-spaces #'rook-move-spaces))
-(defconstant ROOK (make-piece :name "R" :move-spaces #'rook-move-spaces))
-(defconstant ELEPHANT (make-piece :name "E" :move-spaces #'elephant-move-spaces
-                                  :move-limits #'elephant-move-limits))
-(defconstant GENERAL (make-piece :name "G" :move-spaces #'general-move-spaces 
-                                 :move-limits #'palace-limits))
-(defconstant HORSE (make-piece :name "H" :move-spaces #'horse-move-spaces))
-(defconstant SOLDIER (make-piece :name "S" :move-spaces #'soldier-move-spaces 
-                                 :pos "c3"))
-
-(defun new-piece(piece-type side pos)
-  (let ((piece (copy-piece piece-type)))
-    (setf (piece-pos piece) pos)
-    (setf (piece-side piece) side)
-    piece
-    ))
-
-(defun move-n(pos) (move-x pos 0 1))
-(defun move-e(pos) (move-x pos 1 0))
-(defun move-s(pos) (move-x pos 0 -1))
-(defun move-w(pos) (move-x pos -1 0))
-(defun move-ne(pos) (move-x pos 1 1))
-(defun move-nw(pos) (move-x pos -1 1))
-(defun move-se(pos) (move-x pos 1 -1))
-(defun move-sw(pos) (move-x pos -1 -1))
-
-(defun move-x(pos addx addy)
-  (if (null pos)
-    nil ; return nil early if original pos is nil
-    (let ( (x (ascii-inc (elt pos 0) addx)) (y (ascii-inc (elt pos 1) addy)) )
-      (cond
-        ((equal y #\:) nil)
-        ((equal y #\/) nil)
-        ((equal x #\`) nil)
-        ((equal x #\j) nil)
-        (T (s+ x y))
-        ))
-    ))
-
-; Increment
-(defun ascii-inc(x addx) (code-char (+ addx (char-code x))))
 
 ; Should be customizable, will implement later
 (defun get-color-code (side)
@@ -380,41 +422,6 @@
                     (row-to-string (cdr row))))
     ))
 
-(defconstant STARTBOARD '(
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ("_" "_" "_" "_" "_" "_" "_" "_" "_")
-                          ))
-
-(defun setup-board(red black)
-  (let ((board STARTBOARD))
-    (mapcar
-      (lambda (piece)
-        (set-space board (piece-pos piece) piece))
-      (append (player-pieces red) (player-pieces black))
-      )
-    board))
-
-(defun setup-pieces(piece-type side row col-list)
-  (mapcar (lambda(col)
-            (new-piece piece-type side (s+ col row)))
-          col-list)
-  )
-
-(defconstant SOLDIER_COLS '("a" "c" "e" "g" "i"))
-(defconstant CANNON_COLS '("b" "h"))
-(defconstant ROOK_COLS '("a" "i"))
-(defconstant HORSE_COLS '("b" "h"))
-(defconstant ELEPHANT_COLS '("c" "g"))
-(defconstant ADVISOR_COLS '("d" "f"))
-(defconstant GENERAL_COLS '("e"))
 
 ; a-i, 0-9
 (defun is-valid-pos(pos)
